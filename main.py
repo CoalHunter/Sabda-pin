@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 import google.generativeai as genai
 
 # ==========================================
-# 1. KONFIGURASI & ENVIRONMENT VARIABLES
+# 1. KONFIGURASI
 # ==========================================
 PINTEREST_TOKEN = os.getenv("PINTEREST_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -47,7 +47,6 @@ def extract_url(text):
     return None
 
 def parse_html_for_metadata(html):
-    """Ekstrak judul, gambar, deskripsi dari HTML."""
     soup = BeautifulSoup(html, "html.parser")
     
     def get_meta(prop):
@@ -61,18 +60,16 @@ def parse_html_for_metadata(html):
     if not title and soup.title and soup.title.string:
         title = soup.title.string.strip()
     
-    # Fallback: cari gambar dari tag img pertama yang besar
     if not image:
         for img in soup.find_all("img"):
             src = img.get("src", "")
-            if "shopee" in src.lower() or ("cf.shopee" in src):
+            if "shopee" in src.lower() or "cf.shopee" in src:
                 image = src
                 break
     
     return title, image, desc
 
 def fetch_direct(url):
-    """Coba akses langsung ke Shopee."""
     try:
         response = requests.get(url, headers=HEADERS, allow_redirects=True, timeout=20)
         response.raise_for_status()
@@ -84,7 +81,6 @@ def fetch_direct(url):
     return url, None, None, None
 
 def fetch_via_jina(url):
-    """Fallback: gunakan Jina Reader (gratis) untuk bypass blokir Shopee."""
     try:
         jina_url = f"https://r.jina.ai/{url}"
         jina_headers = {
@@ -100,7 +96,6 @@ def fetch_via_jina(url):
         return None, None, None
 
 def validate_image_strict(image_url):
-    """Validasi ketat: pastikan gambar valid dan bisa diakses."""
     if not image_url or not image_url.startswith('http'):
         return False, "URL gambar kosong atau tidak valid."
     
@@ -108,60 +103,67 @@ def validate_image_strict(image_url):
         response = requests.head(image_url, headers=HEADERS, allow_redirects=True, timeout=15)
         
         if response.status_code != 200:
-            return False, f"Server gambar mengembalikan status: {response.status_code}"
+            return False, f"Server gambar status: {response.status_code}"
         
         content_type = response.headers.get('Content-Type', '').lower()
         if not content_type.startswith('image/'):
-            return False, f"File bukan gambar (Content-Type: {content_type})"
+            return False, f"Bukan gambar (Content-Type: {content_type})"
         
         content_length = response.headers.get('Content-Length')
         if content_length and int(content_length) < 5000:
             return False, f"File terlalu kecil ({content_length} bytes)."
         
         return True, "OK"
-    except requests.exceptions.Timeout:
-        return False, "Timeout: Server gambar tidak merespons."
-    except requests.exceptions.ConnectionError:
-        return False, "Connection Error: Tidak bisa terhubung ke server gambar."
     except Exception as e:
         return False, f"Error: {str(e)}"
 
-def generate_ai_content(title, desc):
-    """Generate konten Pinterest dengan Gemini AI."""
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    
-    prompt = f"""
-Kamu adalah ahli copywriter Pinterest untuk pasar Indonesia.
-Buat konten promosi untuk produk ini agar orang ingin checkout.
+def generate_ai_content_fallback(title, desc):
+    """Generate konten dengan AI + fallback jika JSON gagal."""
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        prompt = f"""
+Buat konten Pinterest untuk produk ini (pasar Indonesia):
 
-Nama Produk: "{title}"
-Deskripsi: "{desc[:300] if desc else 'Tidak ada'}"
+Nama: "{title}"
+Deskripsi: "{desc[:200] if desc else ''}"
 
 Aturan:
-1. Gaya: Kasual, hangat, seperti rekomendasi teman. Maksimal 3 emoji.
-2. JANGAN sebut harga atau klaim berlebihan.
-3. Sebutkan 1-2 manfaat nyata produk.
-4. Akhiri dengan CTA: "Klik link buat checkout ya!"
-5. Sertakan 4-5 hashtag relevan (#RacunShopee #ShopeeFinds dll).
+- Judul maks 90 karakter, menarik, pakai emoji
+- Deskripsi maks 400 karakter, sebut manfaat, akhiri "Klik link buat checkout ya!"
+- Tambahkan 4 hashtag (#RacunShopee #ShopeeFinds dll)
+- Tentukan kategori: fashion/dekorasi/gadget/kecantikan/rumah/lainnya
 
-Kembalikan HANYA JSON valid, tanpa markdown, tanpa teks lain:
-{{
-  "title": "Judul menarik, maks 90 karakter",
-  "description": "Deskripsi persuasif, maks 400 karakter",
-  "hashtags": "#Hashtag1 #Hashtag2 #Hashtag3",
-  "category": "pilih SATU: fashion, dekorasi, gadget, kecantikan, rumah, lainnya"
-}}
+BALAS HANYA JSON, tanpa teks lain:
+{{"title":"...","description":"...","hashtags":"...","category":"..."}}
 """
-    try:
         response = model.generate_content(prompt)
         clean_text = response.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(clean_text)
+        
+        # Coba parse JSON
+        try:
+            return json.loads(clean_text)
+        except json.JSONDecodeError:
+            log("⚠️ JSON parsing gagal, pakai fallback manual")
+            # Fallback: buat konten manual dari judul
+            return {
+                "title": f"Racun Shopee: {title[:70]}",
+                "description": f"Produk menarik: {title}. Kualitas bagus dan harga bersahabat. Klik link buat checkout ya!",
+                "hashtags": "#RacunShopee #ShopeeFinds #RekomendasiProduk #BelanjaOnline",
+                "category": "lainnya"
+            }
     except Exception as e:
-        raise Exception(f"Gagal generate AI: {str(e)}")
+        log(f"️ AI error: {e}")
+        # Fallback total jika AI gagal
+        return {
+            "title": f"Rekomendasi: {title[:70]}",
+            "description": f"Produk menarik dari Shopee: {title}. Klik link untuk detail dan pembelian!",
+            "hashtags": "#RacunShopee #ShopeeFinds #Rekomendasi",
+            "category": "lainnya"
+        }
 
 def post_to_pinterest(board_id, title, description, link, image_url):
-    """Posting ke Pinterest API v5."""
     url = "https://api.pinterest.com/v5/pins"
     headers = {
         "Authorization": f"Bearer {PINTEREST_TOKEN}",
@@ -190,7 +192,18 @@ def post_to_pinterest(board_id, title, description, link, image_url):
 # 3. ALUR UTAMA
 # ==========================================
 def main():
-    log(" Memulai Sabda Pinterest Bot...")
+    log("🚀 Memulai Sabda Pinterest Bot...")
+    
+    # Cek API key
+    if not GEMINI_API_KEY:
+        log(" FATAL: GEMINI_API_KEY tidak ada di Secrets!")
+        save_output("RESULT", "❌ **Proses Dibatalkan**\n\nAlasan: `GEMINI_API_KEY` kosong di GitHub Secrets. Tambahkan di Settings > Secrets.")
+        sys.exit(1)
+    
+    if not PINTEREST_TOKEN:
+        log("❌ FATAL: PINTEREST_TOKEN tidak ada!")
+        save_output("RESULT", "❌ **Proses Dibatalkan**\n\nAlasan: `PINTEREST_TOKEN` kosong di GitHub Secrets.")
+        sys.exit(1)
     
     # Langkah 1: Ekstrak Link
     link = extract_url(ISSUE_TEXT)
@@ -201,67 +214,55 @@ def main():
     
     log(f"🔗 Link: {link}")
     
-    # Langkah 2: Ambil Metadata (Coba langsung dulu)
+    # Langkah 2: Ambil Metadata
     final_url, title, image_url, desc = fetch_direct(link)
     
-    # Langkah 3: Jika gagal, coba Jina Reader
     if not title or not image_url:
-        log("⚠️ Akses langsung gagal, mencoba Jina Reader...")
+        log("⚠️ Coba Jina Reader...")
         jina_title, jina_image, jina_desc = fetch_via_jina(link)
         title = title or jina_title
         image_url = image_url or jina_image
         desc = desc or jina_desc
     
-    # Langkah 4: Validasi hasil
     if not title:
         log("❌ FATAL: Gagal ambil judul.")
-        save_output("RESULT", "❌ **Proses Dibatalkan**\n\nAlasan: Tidak bisa mengambil judul produk. Link mungkin tidak valid atau Shopee memblokir semua akses.")
+        save_output("RESULT", "❌ **Proses Dibatalkan**\n\nAlasan: Tidak bisa ambil judul produk.")
         sys.exit(1)
     
     if not image_url:
         log("❌ FATAL: Gagal ambil gambar.")
-        save_output("RESULT", "❌ **Proses Dibatalkan**\n\nAlasan: Tidak bisa mengambil gambar produk. Coba produk lain atau tempel URL gambar langsung di Issue.")
+        save_output("RESULT", "❌ **Proses Dibatalkan**\n\nAlasan: Tidak bisa ambil gambar produk.")
         sys.exit(1)
     
-    log(f"📦 Judul: {title[:60]}...")
+    log(f" Judul: {title[:60]}...")
     log(f"🖼️ Gambar: {image_url[:60]}...")
     
-    # Langkah 5: Validasi Gambar Ketat
+    # Langkah 3: Validasi Gambar
     is_valid, reason = validate_image_strict(image_url)
     if not is_valid:
-        log(f"❌ FATAL: Validasi gambar gagal - {reason}")
-        save_output("RESULT", 
-            f"❌ **Proses Dibatalkan**\n\n"
-            f"**Alasan:** Gambar tidak valid.\n"
-            f"**Detail:** `{reason}`\n"
-            f"**URL:** `{image_url}`\n\n"
-            f"**Solusi:** Coba produk lain dengan gambar yang lebih mudah diakses.")
+        log(f"❌ Validasi gambar gagal: {reason}")
+        save_output("RESULT", f"❌ **Proses Dibatalkan**\n\n**Alasan:** Gambar tidak valid.\n**Detail:** `{reason}`")
         sys.exit(1)
     
     log("✅ Validasi gambar BERHASIL!")
     
-    # Langkah 6: Generate Konten AI
-    log("🧠 Generate konten AI...")
-    try:
-        ai_content = generate_ai_content(title, desc)
-    except Exception as e:
-        log(f"❌ FATAL: Error AI - {str(e)}")
-        save_output("RESULT", f"❌ **Proses Dibatalkan**\n\nAlasan: Gagal generate AI.\nDetail: `{str(e)[:200]}`")
-        sys.exit(1)
+    # Langkah 4: Generate AI (dengan fallback)
+    log("🧠 Generate konten...")
+    ai_content = generate_ai_content_fallback(title, desc)
     
     category = str(ai_content.get("category", "lainnya")).lower().strip()
     board_id = CATEGORY_BOARDS.get(category, CATEGORY_BOARDS["lainnya"])
     
     if not board_id:
         log("❌ FATAL: BOARD_DEFAULT kosong.")
-        save_output("RESULT", "❌ **Proses Dibatalkan**\n\nAlasan: `BOARD_DEFAULT` kosong di GitHub Secrets.")
+        save_output("RESULT", "❌ **Proses Dibatalkan**\n\nAlasan: `BOARD_DEFAULT` kosong di Secrets.")
         sys.exit(1)
     
-    log(f"🏷️ Kategori: {category} | Board: {board_id}")
+    log(f"️ Kategori: {category} | Board: {board_id}")
     
     full_description = f"{ai_content['description']}\n\n{ai_content.get('hashtags', '')}\n\n🛒 **Link:** {link}"
     
-    # Langkah 7: Posting ke Pinterest
+    # Langkah 5: Posting
     log("📌 Posting ke Pinterest...")
     success, info = post_to_pinterest(board_id, ai_content["title"], full_description, link, image_url)
     
@@ -273,12 +274,11 @@ def main():
             f"_Kategori: {category.capitalize()}_\n\n"
             f"🔎 [Lihat Pin](https://pinterest.com/pin/{info})")
     else:
-        log(f"❌ FATAL: Pinterest menolak - {info}")
+        log(f"❌ Pinterest menolak: {info}")
         save_output("RESULT", 
             f"❌ **Proses Dibatalkan**\n\n"
             f"**Alasan:** Pinterest API menolak.\n"
-            f"**Detail:**\n```\n{info[:500]}\n```\n\n"
-            f"**Kemungkinan:** Token expired atau Board ID salah.")
+            f"**Detail:**\n```\n{info[:500]}\n```")
         sys.exit(1)
 
 if __name__ == "__main__":
