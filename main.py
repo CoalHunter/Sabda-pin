@@ -3,7 +3,7 @@ import sys
 import time
 import asyncio
 import edge_tts
-from google import genai
+import google.generativeai as genai
 
 # ==========================================
 # 1. KONFIGURASI
@@ -11,10 +11,10 @@ from google import genai
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ISSUE_TEXT = os.getenv("ISSUE_TEXT", "Fenomena Sosial Umum")
 
-# Setup client dengan library baru
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Setup library standar
+genai.configure(api_key=GEMINI_API_KEY)
 
-# Model yang PASTI tersedia untuk semua pengguna (termasuk akun baru)
+# MODEL INI 100% GRATIS DAN TERSEDIA UNTUK SEMUA AKUN
 MODEL_NAME = "gemini-1.5-flash"
 
 def log(msg):
@@ -31,99 +31,71 @@ def save_output(key, value):
 # ==========================================
 def generate_script_section(topic, section_prompt):
     prompt = f"""
-Kamu adalah penulis naskah dokumenter YouTube profesional (gaya video essay mendalam).
-Topik Video: "{topic}"
-
-Tugasmu: Tulis bagian naskah berikut dengan gaya bercerita yang menarik, kritis, dan menggunakan bahasa Indonesia yang luwes (tidak kaku seperti robot).
-Panjang target bagian ini: sekitar 600-800 kata.
-
-Bagian yang harus ditulis:
-{section_prompt}
-
-ATURAN PENTING:
-- Jangan gunakan kata pembuka seperti "Halo penonton" atau "Di video kali ini". Langsung masuk ke inti cerita.
-- Gunakan analogi atau contoh nyata yang relate dengan kehidupan di Indonesia.
-- Jangan tulis instruksi visual (seperti [cut to...]), tulis murni teks yang akan dibaca narator.
-- Output HANYA teks naskah, tanpa judul bagian, tanpa markdown.
+Kamu adalah penulis naskah dokumenter YouTube profesional.
+Topik: "{topic}"
+Tugas: Tulis bagian ini dengan gaya bercerita menarik, kritis, bahasa Indonesia luwes. Target 600-800 kata.
+Bagian: {section_prompt}
+ATURAN: Jangan pakai kata pembuka "Halo penonton". Langsung ke inti. Gunakan analogi nyata di Indonesia. Output HANYA teks naskah, tanpa judul, tanpa markdown.
 """
     try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt
-        )
+        model = genai.GenerativeModel(MODEL_NAME)
+        response = model.generate_content(prompt)
         text = response.text.strip()
-        if len(text) < 100:
-            log(f"⚠️ Respons terlalu pendek ({len(text)} char)")
-            return None
-        return text
+        return text if len(text) > 100 else None
     except Exception as e:
-        log(f"❌ Error: {str(e)[:150]}")
+        log(f"❌ Error: {str(e)[:100]}")
         return None
 
 def generate_full_script(topic):
-    log(f"📝 Mulai menulis naskah dengan model: {MODEL_NAME}")
-    log("⏳ Proses ini butuh waktu 2-3 menit...")
+    log(f"📝 Menulis naskah (Model: {MODEL_NAME})...")
     
     sections = [
-        "HOOK & INTRO: Mulai dengan pertanyaan provokatif atau fakta mengejutkan tentang topik ini. Bangun rasa penasaran penonton mengapa fenomena ini terjadi.",
-        "BAB 1: AKAR MASALAH. Jelaskan bagaimana fenomena ini dimulai. Apa pemicu sosial, ekonomi, atau psikologis di baliknya?",
-        "BAB 2: DAMPAK NYATA. Berikan 2-3 contoh atau skenario nyata bagaimana fenomena ini merusak atau mengubah kehidupan sehari-hari masyarakat.",
-        "BAB 3: SUDUT PANDANG KRITIS. Bahas ironi atau sisi gelap yang sering diabaikan orang. Mengapa masyarakat membiarkan ini terjadi?",
-        "KESIMPULAN & OUTRO: Berikan refleksi mendalam dan pertanyaan penutup yang membuat penonton berpikir lama setelah video selesai. Akhiri dengan ajakan berdiskusi di kolom komentar."
+        "HOOK & INTRO: Fakta mengejutkan atau pertanyaan provokatif tentang topik ini.",
+        "BAB 1: AKAR MASALAH. Pemicu sosial, ekonomi, atau psikologis di baliknya.",
+        "BAB 2: DAMPAK NYATA. 2-3 contoh skenario nyata bagaimana ini mengubah kehidupan sehari-hari.",
+        "BAB 3: SUDUT PANDANG KRITIS. Ironi atau sisi gelap yang sering diabaikan.",
+        "KESIMPULAN & OUTRO: Refleksi mendalam dan pertanyaan penutup untuk kolom komentar."
     ]
     
     full_script = []
     for i, section in enumerate(sections):
-        log(f"  Menulis Bagian {i+1}/5...")
+        log(f"  Bagian {i+1}/5...")
         text = generate_script_section(topic, section)
         if text:
             full_script.append(text)
-            log(f"  ✅ Bagian {i+1} selesai ({len(text)} karakter)")
-        else:
-            log(f"  ❌ Bagian {i+1} gagal, coba lagi...")
-            text = generate_script_section(topic, section)
-            if text:
-                full_script.append(text)
-        time.sleep(2)
+            log(f"  ✅ Selesai ({len(text)} karakter)")
+        time.sleep(3) # Jeda aman agar tidak kena rate limit
         
     return "\n\n".join(full_script)
 
-def generate_metadata(topic, script_snippet):
+def generate_metadata(topic):
     log("🏷️ Membuat Metadata SEO...")
     prompt = f"""
-Berdasarkan naskah YouTube tentang "{topic}", buat metadata SEO dalam format JSON valid:
+Buat metadata SEO untuk video "{topic}" dalam format JSON valid:
 {{
-  "title": "Judul video yang clickbait tapi relevan, maks 70 karakter",
-  "description": "Deskripsi video 2 paragraf yang mengandung kata kunci, akhiri dengan ajakan subscribe.",
+  "title": "Judul clickbait relevan, maks 70 karakter",
+  "description": "Deskripsi 2 paragraf, akhiri ajakan subscribe",
   "tags": "tag1, tag2, tag3, tag4, tag5"
 }}
 Balas HANYA JSON, tanpa markdown.
 """
     try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt
-        )
-        clean_text = response.text.replace('```json', '').replace('```', '').strip()
+        model = genai.GenerativeModel(MODEL_NAME)
+        response = model.generate_content(prompt)
         import json
+        clean_text = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(clean_text)
-    except Exception as e:
-        log(f"⚠️ Metadata gagal: {e}, pakai default")
-        return {
-            "title": f"Mengupas Tuntas: {topic}",
-            "description": "Video dokumenter mendalam tentang fenomena sosial.",
-            "tags": "fenomena sosial, dokumenter, fakta unik"
-        }
+    except:
+        return {"title": topic, "description": "Dokumenter fenomena sosial.", "tags": "fenomena, sosial"}
 
 # ==========================================
-# 3. FUNGSI TEXT-TO-SPEECH (EDGE-TTS)
+# 3. FUNGSI TEXT-TO-SPEECH
 # ==========================================
 async def generate_audio(text, output_file):
-    log("🎙️ Mengubah naskah menjadi audio (Suara Narator)...")
-    voice = "id-ID-ArdiNeural" 
-    tts = edge_tts.Communicate(text, voice)
+    log("🎙️ Membuat audio (Suara: id-ID-ArdiNeural)...")
+    tts = edge_tts.Communicate(text, "id-ID-ArdiNeural")
     await tts.save(output_file)
-    log("✅ Audio berhasil dibuat!")
+    log("✅ Audio berhasil!")
 
 # ==========================================
 # 4. ALUR UTAMA
@@ -132,41 +104,34 @@ def main():
     log("🚀 Memulai Sabda YouTube Bot...")
     
     if not GEMINI_API_KEY:
-        save_output("RESULT", "❌ GEMINI_API_KEY tidak ditemukan di Secrets!")
+        save_output("RESULT", "❌ GEMINI_API_KEY tidak ada di Secrets!")
         sys.exit(1)
         
     topic = ISSUE_TEXT.strip()
-    log(f"🎯 Topik: {topic}")
     
-    # 1. Generate Naskah
+    # 1. Naskah
     full_script = generate_full_script(topic)
-    
-    if len(full_script) < 500:
-        save_output("RESULT", f"❌ Naskah terlalu pendek ({len(full_script)} karakter). API mungkin bermasalah.")
+    if not full_script or len(full_script) < 500:
+        save_output("RESULT", "❌ Gagal membuat naskah (terlalu pendek).")
         sys.exit(1)
         
-    # Simpan Naskah
     with open("naskah.txt", "w", encoding="utf-8") as f:
         f.write(full_script)
-    log(f"💾 Naskah disimpan ({len(full_script)} karakter)")
-    
-    # 2. Generate Metadata
-    metadata = generate_metadata(topic, full_script[:500])
-    metadata_text = f"JUDUL: {metadata['title']}\n\nDESKRIPSI:\n{metadata['description']}\n\nTAGS:\n{metadata['tags']}"
+        
+    # 2. Metadata
+    metadata = generate_metadata(topic)
     with open("metadata.txt", "w", encoding="utf-8") as f:
-        f.write(metadata_text)
-    log("💾 Metadata disimpan")
-    
-    # 3. Generate Audio
+        f.write(f"JUDUL: {metadata['title']}\n\nDESKRIPSI:\n{metadata['description']}\n\nTAGS:\n{metadata['tags']}")
+        
+    # 3. Audio
     try:
         asyncio.run(generate_audio(full_script, "audio.mp3"))
     except Exception as e:
-        log(f"❌ Gagal membuat audio: {e}")
-        save_output("RESULT", f" Gagal membuat audio: {e}")
+        save_output("RESULT", f"❌ Gagal audio: {e}")
         sys.exit(1)
         
-    log("🎉 PROSES SELESAI!")
-    save_output("RESULT", "✅ **Berhasil!**\n\nFile siap download:\n- `naskah.txt`\n- `audio.mp3`\n- `metadata.txt`")
+    log("🎉 SELESAI!")
+    save_output("RESULT", "✅ **Berhasil!**\nFile siap download:\n- `naskah.txt`\n- `audio.mp3`\n- `metadata.txt`")
 
 if __name__ == "__main__":
     main()
