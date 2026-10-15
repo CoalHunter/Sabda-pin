@@ -13,7 +13,9 @@ ISSUE_TEXT = os.getenv("ISSUE_TEXT", "Fenomena Sosial Umum")
 
 # Setup Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+
+# Model terbaru yang STABIL dan GRATIS (2025)
+MODEL_NAME = "gemini-2.0-flash"
 
 def log(msg):
     print(msg, flush=True)
@@ -25,7 +27,7 @@ def save_output(key, value):
             f.write(f"{key}<<EOF\n{value}\nEOF\n")
 
 # ==========================================
-# 2. FUNGSI GENERATE NASKAH (Dipecah per Bab)
+# 2. FUNGSI GENERATE NASKAH
 # ==========================================
 def generate_script_section(topic, section_prompt):
     prompt = f"""
@@ -45,14 +47,20 @@ ATURAN PENTING:
 - Output HANYA teks naskah, tanpa judul bagian, tanpa markdown.
 """
     try:
+        model = genai.GenerativeModel(MODEL_NAME)
         response = model.generate_content(prompt)
-        return response.text.strip()
+        text = response.text.strip()
+        if len(text) < 100:
+            log(f"⚠️ Respons terlalu pendek ({len(text)} char)")
+            return None
+        return text
     except Exception as e:
-        log(f"❌ Gagal generate bagian: {e}")
-        return ""
+        log(f"❌ Error: {str(e)[:150]}")
+        return None
 
 def generate_full_script(topic):
-    log(" Mulai menulis naskah (Proses ini butuh waktu 1-2 menit)...")
+    log(f"📝 Mulai menulis naskah dengan model: {MODEL_NAME}")
+    log("⏳ Proses ini butuh waktu 2-3 menit...")
     
     sections = [
         "HOOK & INTRO: Mulai dengan pertanyaan provokatif atau fakta mengejutkan tentang topik ini. Bangun rasa penasaran penonton mengapa fenomena ini terjadi.",
@@ -68,12 +76,18 @@ def generate_full_script(topic):
         text = generate_script_section(topic, section)
         if text:
             full_script.append(text)
-        time.sleep(2) # Jeda kecil agar API tidak rate-limit
+            log(f"  ✅ Bagian {i+1} selesai ({len(text)} karakter)")
+        else:
+            log(f"  ❌ Bagian {i+1} gagal, coba lagi...")
+            text = generate_script_section(topic, section)
+            if text:
+                full_script.append(text)
+        time.sleep(2)
         
     return "\n\n".join(full_script)
 
 def generate_metadata(topic, script_snippet):
-    log("️ Membuat Metadata SEO...")
+    log("🏷️ Membuat Metadata SEO...")
     prompt = f"""
 Berdasarkan naskah YouTube tentang "{topic}", buat metadata SEO dalam format JSON valid:
 {{
@@ -84,11 +98,13 @@ Berdasarkan naskah YouTube tentang "{topic}", buat metadata SEO dalam format JSO
 Balas HANYA JSON, tanpa markdown.
 """
     try:
+        model = genai.GenerativeModel(MODEL_NAME)
         response = model.generate_content(prompt)
         clean_text = response.text.replace('```json', '').replace('```', '').strip()
         import json
         return json.loads(clean_text)
-    except:
+    except Exception as e:
+        log(f"⚠️ Metadata gagal: {e}, pakai default")
         return {
             "title": f"Mengupas Tuntas: {topic}",
             "description": "Video dokumenter mendalam tentang fenomena sosial.",
@@ -100,7 +116,6 @@ Balas HANYA JSON, tanpa markdown.
 # ==========================================
 async def generate_audio(text, output_file):
     log("🎙️ Mengubah naskah menjadi audio (Suara Narator)...")
-    # Menggunakan suara Indonesia yang natural (Ardi = laki-laki, Gadis = perempuan)
     voice = "id-ID-ArdiNeural" 
     tts = edge_tts.Communicate(text, voice)
     await tts.save(output_file)
@@ -110,10 +125,10 @@ async def generate_audio(text, output_file):
 # 4. ALUR UTAMA
 # ==========================================
 def main():
-    log(" Memulai Sabda YouTube Bot...")
+    log("🚀 Memulai Sabda YouTube Bot...")
     
     if not GEMINI_API_KEY:
-        save_output("RESULT", "❌ GEMINI_API_KEY tidak ditemukan di Secrets!")
+        save_output("RESULT", " GEMINI_API_KEY tidak ditemukan di Secrets!")
         sys.exit(1)
         
     topic = ISSUE_TEXT.strip()
@@ -121,23 +136,24 @@ def main():
     
     # 1. Generate Naskah
     full_script = generate_full_script(topic)
+    
     if len(full_script) < 500:
-        save_output("RESULT", "❌ Naskah terlalu pendek, kemungkinan API error.")
+        save_output("RESULT", f"❌ Naskah terlalu pendek ({len(full_script)} karakter). API mungkin bermasalah.")
         sys.exit(1)
         
     # Simpan Naskah
     with open("naskah.txt", "w", encoding="utf-8") as f:
         f.write(full_script)
-    log("💾 Naskah disimpan ke naskah.txt")
+    log(f"💾 Naskah disimpan ({len(full_script)} karakter)")
     
     # 2. Generate Metadata
     metadata = generate_metadata(topic, full_script[:500])
     metadata_text = f"JUDUL: {metadata['title']}\n\nDESKRIPSI:\n{metadata['description']}\n\nTAGS:\n{metadata['tags']}"
     with open("metadata.txt", "w", encoding="utf-8") as f:
         f.write(metadata_text)
-    log("💾 Metadata disimpan ke metadata.txt")
+    log("💾 Metadata disimpan")
     
-    # 3. Generate Audio (Async)
+    # 3. Generate Audio
     try:
         asyncio.run(generate_audio(full_script, "audio.mp3"))
     except Exception as e:
@@ -145,8 +161,8 @@ def main():
         save_output("RESULT", f"❌ Gagal membuat audio: {e}")
         sys.exit(1)
         
-    log("🎉 PROSES SELESAI! File naskah.txt, audio.mp3, dan metadata.txt siap didownload.")
-    save_output("RESULT", "✅ **Berhasil!**\n\nFile berikut telah ditambahkan ke repository:\n- `naskah.txt` (Teks lengkap)\n- `audio.mp3` (Siap pakai di CapCut)\n- `metadata.txt` (Judul, Deskripsi, Tags SEO)")
+    log("🎉 PROSES SELESAI!")
+    save_output("RESULT", "✅ **Berhasil!**\n\nFile siap download:\n- `naskah.txt`\n- `audio.mp3`\n- `metadata.txt`")
 
 if __name__ == "__main__":
     main()
