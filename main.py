@@ -11,49 +11,11 @@ from google import genai
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ISSUE_TEXT = os.getenv("ISSUE_TEXT", "Fenomena Sosial Umum")
 
-# Setup client
+# Setup client dengan library baru
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Daftar model yang mungkin tersedia (dari yang terbaru ke terlama)
-MODEL_CANDIDATES = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-    "gemini-pro",
-]
-
-def find_working_model():
-    """Cek model mana yang tersedia, pakai yang pertama ketemu."""
-    print("🔍 Mencari model Gemini yang tersedia...")
-    try:
-        available = client.models.list()
-        available_ids = [m.name for m in available]
-        print(f"   Model tersedia: {len(available_ids)}")
-        
-        for candidate in MODEL_CANDIDATES:
-            # Cek dengan berbagai format nama
-            for name_format in [candidate, f"models/{candidate}"]:
-                if name_format in available_ids:
-                    print(f"   ✅ Pakai model: {name_format}")
-                    return name_format
-        
-        # Fallback: pakai model pertama yang ada
-        if available_ids:
-            first = available_ids[0]
-            print(f"   ⚠️ Tidak ada model di daftar, pakai: {first}")
-            return first
-            
-    except Exception as e:
-        print(f"   ⚠️ Gagal cek model: {e}")
-    
-    # Fallback terakhir
-    print("   ❌ Pakai gemini-1.5-flash sebagai fallback")
-    return "gemini-1.5-flash"
-
-# Auto-detect model saat script jalan
-MODEL_NAME = find_working_model()
+# Model yang PASTI tersedia untuk semua pengguna (termasuk akun baru)
+MODEL_NAME = "gemini-1.5-flash"
 
 def log(msg):
     print(msg, flush=True)
@@ -174,7 +136,7 @@ def main():
         sys.exit(1)
         
     topic = ISSUE_TEXT.strip()
-    log(f" Topik: {topic}")
+    log(f"🎯 Topik: {topic}")
     
     # 1. Generate Naskah
     full_script = generate_full_script(topic)
@@ -200,7 +162,7 @@ def main():
         asyncio.run(generate_audio(full_script, "audio.mp3"))
     except Exception as e:
         log(f"❌ Gagal membuat audio: {e}")
-        save_output("RESULT", f"❌ Gagal membuat audio: {e}")
+        save_output("RESULT", f" Gagal membuat audio: {e}")
         sys.exit(1)
         
     log("🎉 PROSES SELESAI!")
