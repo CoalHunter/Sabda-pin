@@ -1,64 +1,49 @@
-name: Sabda Bot - Pinterest Automation
+name: Sabda YouTube Generator
 
 on:
-  # Memicu otomatis setiap kali ada Issue baru yang dibuat
   issues:
     types: [opened]
-  # Memungkinkan Anda menjalankan bot secara manual dari tab Actions (untuk tes)
   workflow_dispatch:
 
-# Memberikan izin kepada bot untuk memberi komentar dan menutup Issue
 permissions:
+  contents: write
   issues: write
 
 jobs:
-  auto-post:
+  generate-video-assets:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Execute Bot
-        id: run_bot
+      - name: Run Generator
+        id: bot
         env:
-          # Mengambil teks dari Judul dan Body Issue untuk dicari link-nya
           ISSUE_TEXT: ${{ github.event.issue.title }} ${{ github.event.issue.body }}
-          
-          # Memasukkan Secrets dari pengaturan GitHub
-          PINTEREST_TOKEN: ${{ secrets.PINTEREST_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          
-          # Board IDs (BOARD_DEFAULT wajib diisi, yang lain opsional)
-          BOARD_DEFAULT: ${{ secrets.BOARD_DEFAULT }}
-          BOARD_FASHION: ${{ secrets.BOARD_FASHION }}
-          BOARD_DEKO: ${{ secrets.BOARD_DEKO }}
-          BOARD_GADGET: ${{ secrets.BOARD_GADGET }}
-          BOARD_BEAUTY: ${{ secrets.BOARD_BEAUTY }}
-          BOARD_RUMAH: ${{ secrets.BOARD_RUMAH }}
-          
         run: python main.py
 
-      # Jika script BERHASIL (Exit code 0): Beri komentar dan TUTUP Issue
-      - name: Handle Success (Comment & Close)
-        if: success() && github.event_name == 'issues'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit Generated Files
+        if: success()
         run: |
-          gh issue comment ${{ github.event.issue.number }} --body "${{ steps.run_bot.outputs.RESULT }}"
-          gh issue close ${{ github.event.issue.number }} --reason completed
+          git config --global user.name 'Sabda Bot'
+          git config --global user.email 'bot@sabda.com'
+          git add naskah.txt audio.mp3 metadata.txt
+          git commit -m "chore: generate assets for ${{ github.event.issue.title }}"
+          git push
 
-      # Jika script GAGAL (Exit code 1, misal gambar invalid): Beri komentar tapi JANGAN TUTUP Issue
-      - name: Handle Failure (Comment & Keep Open)
-        if: failure() && github.event_name == 'issues'
+      - name: Comment on Issue
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh issue comment ${{ github.event.issue.number }} --body "${{ steps.run_bot.outputs.RESULT }}"
+          gh issue comment ${{ github.event.issue.number }} --body "${{ steps.bot.outputs.RESULT }}"
+          if [ "${{ job.status }}" == "success" ]; then
+            gh issue close ${{ github.event.issue.number }}
+          fi
