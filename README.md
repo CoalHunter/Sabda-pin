@@ -1,15 +1,26 @@
-#  Sabda YouTube Generator
+# 🎙️ Sabda Audio Generator
 
-Bot otomatis untuk membuat naskah video dokumenter fenomena sosial & audio narator.
+Bot otomatis untuk mengubah naskah menjadi audio narator (MP3) menggunakan edge-tts.
 
 ## 🚀 Cara Pakai
-1. Buka tab **Issues**.
-2. Buat Issue baru dengan **Judul** berisi topik video (Contoh: `Fenomena FOMO`).
-3. Tunggu bot bekerja (2-3 menit).
-4. Download file `naskah.txt`, `audio.mp3`, dan `metadata.txt` di tab Code.
-5. Edit di CapCut & Upload ke YouTube!
+
+1. Buka tab **Issues** → **New issue**
+2. **Title**: Nama file (contoh: `Healing_Palsu`)
+3. **Body**: Paste seluruh naskah di sini
+4. Klik **Submit new issue**
+5. Tunggu 1-3 menit
+6. Download file `.mp3` di tab **Code**
+
+## 🎬 Langkah Selanjutnya
+
+1. Download file `.mp3` dari repository
+2. Buka **CapCut** di HP
+3. Import audio → tambahkan video stok
+4. Gunakan **Auto Captions** untuk subtitle
+5. Export & upload ke YouTube!
 
 ## 🛠️ Tech Stack
-- **AI**: Google Gemini (Naskah & SEO)
-- **Audio**: Edge-TTS (Suara Narator Natural)
+
+- **Audio**: edge-tts (Microsoft Azure Neural Voices)
 - **Automation**: GitHub Actions
+- **Voice**: id-ID-ArdiNeural (Laki-laki, natural)
