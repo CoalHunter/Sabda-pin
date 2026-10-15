@@ -1,4 +1,4 @@
-name: Sabda YouTube Generator
+name: Sabda Audio Generator
 
 on:
   issues:
@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 jobs:
-  generate-video-assets:
+  generate-audio:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,20 +22,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Generator
+      - name: Run Audio Generator
         id: bot
         env:
-          ISSUE_TEXT: ${{ github.event.issue.title }} ${{ github.event.issue.body }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
         run: python main.py
 
-      - name: Commit Generated Files
+      - name: Commit Generated Audio
         if: success()
         run: |
           git config --global user.name 'Sabda Bot'
           git config --global user.email 'bot@sabda.com'
-          git add naskah.txt audio.mp3 metadata.txt
-          git commit -m "chore: generate assets for ${{ github.event.issue.title }}"
+          git add *.mp3
+          git commit -m "chore: generate audio for ${{ github.event.issue.title }}"
           git push
 
       - name: Comment on Issue
