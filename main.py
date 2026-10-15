@@ -3,7 +3,7 @@ import sys
 import time
 import asyncio
 import edge_tts
-import google.generativeai as genai
+from google import genai
 
 # ==========================================
 # 1. KONFIGURASI
@@ -11,11 +11,9 @@ import google.generativeai as genai
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ISSUE_TEXT = os.getenv("ISSUE_TEXT", "Fenomena Sosial Umum")
 
-# Setup Gemini
-genai.configure(api_key=GEMINI_API_KEY)
-
-# Model terbaru yang STABIL dan GRATIS (2025)
-MODEL_NAME = "gemini-2.0-flash"
+# Setup client dengan library baru
+client = genai.Client(api_key=GEMINI_API_KEY)
+MODEL_NAME = "gemini-2.0-flash-lite"
 
 def log(msg):
     print(msg, flush=True)
@@ -47,8 +45,10 @@ ATURAN PENTING:
 - Output HANYA teks naskah, tanpa judul bagian, tanpa markdown.
 """
     try:
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt
+        )
         text = response.text.strip()
         if len(text) < 100:
             log(f"⚠️ Respons terlalu pendek ({len(text)} char)")
@@ -98,8 +98,10 @@ Berdasarkan naskah YouTube tentang "{topic}", buat metadata SEO dalam format JSO
 Balas HANYA JSON, tanpa markdown.
 """
     try:
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt
+        )
         clean_text = response.text.replace('```json', '').replace('```', '').strip()
         import json
         return json.loads(clean_text)
@@ -128,7 +130,7 @@ def main():
     log("🚀 Memulai Sabda YouTube Bot...")
     
     if not GEMINI_API_KEY:
-        save_output("RESULT", " GEMINI_API_KEY tidak ditemukan di Secrets!")
+        save_output("RESULT", "❌ GEMINI_API_KEY tidak ditemukan di Secrets!")
         sys.exit(1)
         
     topic = ISSUE_TEXT.strip()
